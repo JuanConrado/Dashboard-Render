@@ -1,114 +1,145 @@
-import json, pathlib
-import numpy as np
+import geopandas as gpd
 import pandas as pd
-import mapclassify as mc
 import plotly.express as px
-from dash import Dash, html, dcc, Input, Output, dash_table
+from dash import Dash, dcc, html, Input, Output, dash_table
+import mapclassify
+import json
+import pathlib
 
-# Rutas
-DATA_DIR = pathlib.Path(__file__).parent / "data"
-PATH_GEOJSON = DATA_DIR / "departamentos.geojson"
-PATH_TASAS   = DATA_DIR / "tasas_hogares_departamento.csv"
+# =========================
+# 1. Cargar datos geográficos
+# =========================
+try:
+    gdf = gpd.read_file("outputs/tasas_hogares_dep.geojson")
+except Exception as e:
+    print("⚠️ No se encontró el archivo GeoJSON. Verifica que exista en outputs/")
+    raise e
 
-# Carga
-with open(PATH_GEOJSON, "r", encoding="utf-8") as f:
-    GEOJSON = json.load(f)
+# Asegurar sistema de coordenadas (para visualización web)
+gdf = gdf.to_crs(4326)
 
-df = pd.read_csv(PATH_TASAS, dtype={"COD_DPTO": str})
+# =========================
+# 2. Validar columnas
+# =========================
+# Buscar columna con los porcentajes de pobreza
+col_pobreza = next((c for c in gdf.columns if "pobreza" in c.lower()), None)
+if not col_pobreza:
+    raise ValueError(f"No se encontró una columna de pobreza en el GeoJSON. Columnas disponibles: {list(gdf.columns)}")
 
-# Nombre de etiqueta (buscar la que exista)
-props = {feat["properties"]["COD_DPTO"]: feat["properties"] for feat in GEOJSON["features"]}
-name_keys = ["DPTO_CNMBR","DPTO_CNMBRE","dpto_cnmbr","dpto_cnmbre"]
-def get_name(code):
-    d = props.get(code, {})
-    for k in name_keys:
-        if k in d and pd.notna(d[k]): return d[k]
-    return code
+# Buscar nombre del departamento
+col_nom = next((c for c in gdf.columns if "nmbr" in c.lower() or "nombre" in c.lower()), "COD_DPTO")
 
-df["NOMBRE"] = df["COD_DPTO"].apply(get_name)
+# Limpiar datos nulos
+gdf[col_pobreza] = pd.to_numeric(gdf[col_pobreza], errors="coerce")
+gdf = gdf.dropna(subset=[col_pobreza])
 
-VAL_COL = "pobreza_hog_%"
-assert VAL_COL in df.columns, f"No encuentro {VAL_COL} en el CSV."
-
+# =========================
+# 3. Crear la app Dash
+# =========================
 app = Dash(__name__)
 server = app.server
 
 app.layout = html.Div([
-    html.H2("Taller · Pobreza de hogares (%) — Dashboard"),
+    html.H3("Taller · Pobreza de hogares (%) — Dashboard", style={"textAlign": "center"}),
+
     html.Div([
         html.Div([
             html.Label("Clasificación"),
-            dcc.Dropdown(id="scheme",
-                options=[{"label":"Quantiles","value":"quantiles"},
-                         {"label":"Jenks (Natural Breaks)","value":"jenks"}],
-                value="quantiles", clearable=False)
-        ], style={"width":"32%","display":"inline-block","marginRight":"1%"}),
+            dcc.Dropdown(
+                id="scheme",
+                options=[
+                    {"label": "Quantiles", "value": "quantiles"},
+                    {"label": "Jenks (Natural Breaks)", "value": "jenks"},
+                    {"label": "Equal Interval", "value": "equalinterval"}
+                ],
+                value="quantiles"
+            )
+        ], style={"width": "30%", "display": "inline-block", "marginRight": "2%"}),
+
         html.Div([
             html.Label("k (clases)"),
-            dcc.Slider(id="k", min=3, max=7, step=1, value=5,
-                       marks={i:str(i) for i in range(3,8)})
-        ], style={"width":"32%","display":"inline-block","marginRight":"1%"}),
+            dcc.Slider(id="k", min=3, max=7, step=1, value=5, marks={i: str(i) for i in range(3, 8)})
+        ], style={"width": "30%", "display": "inline-block", "marginRight": "2%"}),
+
         html.Div([
             html.Label("Paleta"),
-            dcc.Dropdown(id="palette",
-                options=[{"label":c,"value":c} for c in ["YlOrRd","BuGn","PuRd","Oranges","Greens","Blues"]],
-                value="YlOrRd", clearable=False)
-        ], style={"width":"32%","display":"inline-block"})
-    ], style={"marginBottom":"10px"}),
+            dcc.Dropdown(
+                id="palette",
+                options=[{"label": p, "value": p} for p in ["YlOrRd", "BuGn", "Oranges", "Greens", "Purples"]],
+                value="BuGn"
+            )
+        ], style={"width": "30%", "display": "inline-block"})
+    ], style={"padding": "20px"}),
 
-    dcc.Graph(id="mapa", style={"height":"70vh"}),
+    dcc.Graph(id="mapa"),
 
     html.Div([
         html.Div([
-            html.H4("Top 5 (%)"),
-            dash_table.DataTable(id="top5",
-                columns=[{"name":c,"id":c} for c in ["NOMBRE","COD_DPTO",VAL_COL]],
-                page_size=5, style_table={"overflowX":"auto"})
-        ], style={"width":"49%","display":"inline-block"}),
+            html.H5("Top 5 (%)"),
+            dash_table.DataTable(
+                id="top5",
+                columns=[{"name": i, "id": i} for i in [col_nom, "COD_DPTO", col_pobreza]],
+                style_table={"overflowX": "auto"}
+            )
+        ], style={"width": "45%", "display": "inline-block"}),
+
         html.Div([
-            html.H4("Bottom 5 (%)"),
-            dash_table.DataTable(id="bot5",
-                columns=[{"name":c,"id":c} for c in ["NOMBRE","COD_DPTO",VAL_COL]],
-                page_size=5, style_table={"overflowX":"auto"})
-        ], style={"width":"49%","display":"inline-block","float":"right"})
+            html.H5("Bottom 5 (%)"),
+            dash_table.DataTable(
+                id="bottom5",
+                columns=[{"name": i, "id": i} for i in [col_nom, "COD_DPTO", col_pobreza]],
+                style_table={"overflowX": "auto"}
+            )
+        ], style={"width": "45%", "display": "inline-block", "float": "right"})
     ])
-], style={"maxWidth":"1200px","margin":"0 auto","padding":"10px"})
+])
 
-def compute_bins(values, scheme="quantiles", k=5):
-    vals = pd.Series(values).dropna()
-    if len(vals) == 0: return None
-    ci = mc.NaturalBreaks(vals, k=k) if scheme=="jenks" else mc.Quantiles(vals, k=k)
-    brks = np.asarray(ci.bins, dtype=float)
-    # cubrir extremos para evitar “outside color scale”
-    brks[0]  = min(vals.min(), brks[0]) - 1e-9
-    brks[-1] = max(vals.max(), brks[-1]) + 1e-9
-    return brks
-
+# =========================
+# 4. Callbacks interactivos
+# =========================
 @app.callback(
-    Output("mapa","figure"),
-    Output("top5","data"),
-    Output("bot5","data"),
-    Input("scheme","value"),
-    Input("k","value"),
-    Input("palette","value"),
+    Output("mapa", "figure"),
+    Output("top5", "data"),
+    Output("bottom5", "data"),
+    Input("scheme", "value"),
+    Input("k", "value"),
+    Input("palette", "value")
 )
-def update_map(scheme, k, palette):
-    bins = compute_bins(df[VAL_COL], scheme=scheme, k=int(k))
-    fig = px.choropleth(
-        df, geojson=GEOJSON, color=VAL_COL, locations="COD_DPTO",
-        featureidkey="properties.COD_DPTO",
-        hover_name="NOMBRE",
+def actualizar_mapa(scheme, k, palette):
+    # Calcular intervalos
+    try:
+        classifier = mapclassify.classify(gdf[col_pobreza].values, scheme=scheme, k=k)
+        gdf["class"] = classifier.yb
+    except Exception:
+        gdf["class"] = 0
+
+    # Crear mapa
+    fig = px.choropleth_mapbox(
+        gdf,
+        geojson=json.loads(gdf.to_json()),
+        locations=gdf.index,
+        color=col_pobreza,
         color_continuous_scale=palette,
-        range_color=(df[VAL_COL].min(), df[VAL_COL].max())
+        mapbox_style="carto-positron",
+        center={"lat": 4.6, "lon": -74.1},
+        zoom=4.3,
+        opacity=0.85,
+        hover_data=[col_nom, "COD_DPTO", col_pobreza]
     )
-    fig.update_geos(fitbounds="locations", visible=False)
-    fig.update_layout(margin=dict(l=0,r=0,t=10,b=0),
-                      coloraxis_colorbar=dict(title="Pobreza hogares (%)"))
 
-    # Top/bottom 5
-    t5 = df.sort_values(VAL_COL, ascending=False)[["NOMBRE","COD_DPTO",VAL_COL]].head(5).round({VAL_COL:1})
-    b5 = df.sort_values(VAL_COL, ascending=True)[["NOMBRE","COD_DPTO",VAL_COL]].head(5).round({VAL_COL:1})
-    return fig, t5.to_dict("records"), b5.to_dict("records")
+    fig.update_layout(
+        margin={"r":0, "t":0, "l":0, "b":0},
+        coloraxis_colorbar=dict(title="Pobreza hogares (%)")
+    )
 
+    # Tablas top/bottom
+    top5 = gdf.nlargest(5, col_pobreza)[[col_nom, "COD_DPTO", col_pobreza]]
+    bottom5 = gdf.nsmallest(5, col_pobreza)[[col_nom, "COD_DPTO", col_pobreza]]
+
+    return fig, top5.to_dict("records"), bottom5.to_dict("records")
+
+# =========================
+# 5. Ejecutar app
+# =========================
 if __name__ == "__main__":
-    app.run_server(host="0.0.0.0", port=8050, debug=True)
+    app.run_server(host="0.0.0.0", port=8050, debug=False)
