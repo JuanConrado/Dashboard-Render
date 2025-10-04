@@ -1,145 +1,111 @@
-import geopandas as gpd
 import pandas as pd
+import geopandas as gpd
 import plotly.express as px
-from dash import Dash, dcc, html, Input, Output, dash_table
-import mapclassify
-import json
-import pathlib
+from dash import Dash, dcc, html, Input, Output
 
-# =========================
-# 1. Cargar datos geográficos
-# =========================
-try:
-    gdf = gpd.read_file("data/departamentos.geojson")
-except Exception as e:
-    print("⚠️ No se encontró el archivo GeoJSON. Verifica que exista en data/")
-    raise e
+# ===============================
+# 1️⃣ CARGA DE DATOS
+# ===============================
+# Archivos dentro de la carpeta "data"
+geo_path = "data/departamentos.geojson"
+csv_path = "data/tasas_hogares_departamento.csv"
 
-# Asegurar sistema de coordenadas (para visualización web)
-gdf = gdf.to_crs(4326)
+# Leer los datos
+geo = gpd.read_file(geo_path)
+tasas = pd.read_csv(csv_path)
 
-# =========================
-# 2. Validar columnas
-# =========================
-# Buscar columna con los porcentajes de pobreza
-col_pobreza = next((c for c in gdf.columns if "pobreza" in c.lower()), None)
-if not col_pobreza:
-    raise ValueError(f"No se encontró una columna de pobreza en el GeoJSON. Columnas disponibles: {list(gdf.columns)}")
+# Asegurar tipos de código iguales (2 dígitos)
+geo["COD_DPTO"] = geo["COD_DPTO"].astype(str).str.zfill(2)
+tasas["COD_DPTO"] = tasas["COD_DPTO"].astype(str).str.zfill(2)
 
-# Buscar nombre del departamento
-col_nom = next((c for c in gdf.columns if "nmbr" in c.lower() or "nombre" in c.lower()), "COD_DPTO")
+# Unir GeoJSON con CSV
+geo = geo.merge(tasas[["COD_DPTO", "pobreza_hog_%"]], on="COD_DPTO", how="left")
 
-# Limpiar datos nulos
-gdf[col_pobreza] = pd.to_numeric(gdf[col_pobreza], errors="coerce")
-gdf = gdf.dropna(subset=[col_pobreza])
+# Validar unión
+print(f"Departamentos con datos: {geo['pobreza_hog_%'].notna().sum()}")
+print(f"Departamentos sin datos: {geo['pobreza_hog_%'].isna().sum()}")
 
-# =========================
-# 3. Crear la app Dash
-# =========================
+# ===============================
+# 2️⃣ APLICACIÓN DASH
+# ===============================
 app = Dash(__name__)
-server = app.server
+server = app.server  # Para Render
 
+# Layout
 app.layout = html.Div([
-    html.H3("Taller · Pobreza de hogares (%) — Dashboard", style={"textAlign": "center"}),
-
+    html.H3("Taller · Pobreza de hogares (%) — Dashboard"),
+    
     html.Div([
-        html.Div([
-            html.Label("Clasificación"),
-            dcc.Dropdown(
-                id="scheme",
-                options=[
-                    {"label": "Quantiles", "value": "quantiles"},
-                    {"label": "Jenks (Natural Breaks)", "value": "jenks"},
-                    {"label": "Equal Interval", "value": "equalinterval"}
-                ],
-                value="quantiles"
-            )
-        ], style={"width": "30%", "display": "inline-block", "marginRight": "2%"}),
-
-        html.Div([
-            html.Label("k (clases)"),
-            dcc.Slider(id="k", min=3, max=7, step=1, value=5, marks={i: str(i) for i in range(3, 8)})
-        ], style={"width": "30%", "display": "inline-block", "marginRight": "2%"}),
-
-        html.Div([
-            html.Label("Paleta"),
-            dcc.Dropdown(
-                id="palette",
-                options=[{"label": p, "value": p} for p in ["YlOrRd", "BuGn", "Oranges", "Greens", "Purples"]],
-                value="BuGn"
-            )
-        ], style={"width": "30%", "display": "inline-block"})
-    ], style={"padding": "20px"}),
-
-    dcc.Graph(id="mapa"),
-
+        html.Label("Clasificación"),
+        dcc.Dropdown(
+            id="scheme",
+            options=[
+                {"label": "Quantiles", "value": "quantiles"},
+                {"label": "Natural Breaks (Jenks)", "value": "natural_breaks"}
+            ],
+            value="quantiles",
+            clearable=False,
+            style={"width": "250px"}
+        ),
+        
+        html.Label("k (clases)"),
+        dcc.Slider(3, 7, 1, value=5, id="k", marks={i: str(i) for i in range(3, 8)}, tooltip={"placement": "bottom"})
+    ], style={"display": "flex", "gap": "40px", "alignItems": "center"}),
+    
+    html.Br(),
+    
     html.Div([
-        html.Div([
-            html.H5("Top 5 (%)"),
-            dash_table.DataTable(
-                id="top5",
-                columns=[{"name": i, "id": i} for i in [col_nom, "COD_DPTO", col_pobreza]],
-                style_table={"overflowX": "auto"}
-            )
-        ], style={"width": "45%", "display": "inline-block"}),
-
-        html.Div([
-            html.H5("Bottom 5 (%)"),
-            dash_table.DataTable(
-                id="bottom5",
-                columns=[{"name": i, "id": i} for i in [col_nom, "COD_DPTO", col_pobreza]],
-                style_table={"overflowX": "auto"}
-            )
-        ], style={"width": "45%", "display": "inline-block", "float": "right"})
-    ])
+        html.Label("Paleta"),
+        dcc.Dropdown(
+            id="palette",
+            options=[
+                {"label": "YlOrRd", "value": "YlOrRd"},
+                {"label": "BuGn", "value": "BuGn"},
+                {"label": "OrRd", "value": "OrRd"},
+                {"label": "Viridis", "value": "Viridis"},
+                {"label": "Cividis", "value": "Cividis"},
+            ],
+            value="BuGn",
+            clearable=False,
+            style={"width": "250px"}
+        )
+    ]),
+    
+    html.Br(),
+    dcc.Graph(id="mapa", style={"height": "600px"}),
 ])
 
-# =========================
-# 4. Callbacks interactivos
-# =========================
+# ===============================
+# 3️⃣ CALLBACK DEL MAPA
+# ===============================
 @app.callback(
     Output("mapa", "figure"),
-    Output("top5", "data"),
-    Output("bottom5", "data"),
     Input("scheme", "value"),
     Input("k", "value"),
     Input("palette", "value")
 )
 def actualizar_mapa(scheme, k, palette):
-    # Calcular intervalos
     try:
-        classifier = mapclassify.classify(gdf[col_pobreza].values, scheme=scheme, k=k)
-        gdf["class"] = classifier.yb
-    except Exception:
-        gdf["class"] = 0
+        fig = px.choropleth_mapbox(
+            geo,
+            geojson=geo.__geo_interface__,
+            locations="COD_DPTO",
+            color="pobreza_hog_%",
+            hover_name="dpto_cnmbr",
+            color_continuous_scale=palette,
+            mapbox_style="carto-positron",
+            zoom=4,
+            center={"lat": 4.5, "lon": -74.1},
+            title=f"Pobreza de hogares (%) — {scheme}, k={k}",
+        )
+        fig.update_layout(margin={"r":0,"t":40,"l":0,"b":0})
+        return fig
+    except Exception as e:
+        print("Error al generar el mapa:", e)
+        return px.scatter(title="Error al cargar datos")
 
-    # Crear mapa
-    fig = px.choropleth_mapbox(
-        gdf,
-        geojson=json.loads(gdf.to_json()),
-        locations=gdf.index,
-        color=col_pobreza,
-        color_continuous_scale=palette,
-        mapbox_style="carto-positron",
-        center={"lat": 4.6, "lon": -74.1},
-        zoom=4.3,
-        opacity=0.85,
-        hover_data=[col_nom, "COD_DPTO", col_pobreza]
-    )
-
-    fig.update_layout(
-        margin={"r":0, "t":0, "l":0, "b":0},
-        coloraxis_colorbar=dict(title="Pobreza hogares (%)")
-    )
-
-    # Tablas top/bottom
-    top5 = gdf.nlargest(5, col_pobreza)[[col_nom, "COD_DPTO", col_pobreza]]
-    bottom5 = gdf.nsmallest(5, col_pobreza)[[col_nom, "COD_DPTO", col_pobreza]]
-
-    return fig, top5.to_dict("records"), bottom5.to_dict("records")
-
-# =========================
-# 5. Ejecutar app
-# =========================
+# ===============================
+# 4️⃣ EJECUCIÓN LOCAL
+# ===============================
 if __name__ == "__main__":
-    app.run_server(host="0.0.0.0", port=8050, debug=False)
+    app.run_server(debug=True)
