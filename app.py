@@ -10,9 +10,9 @@ import pathlib
 # 1. Cargar datos geográficos
 # =========================
 try:
-    gdf = gpd.read_file("data/tasas_hogares_dep.geojson")
+    gdf = gpd.read_file("data/departamentos.geojson")
 except Exception as e:
-    print("⚠️ No se encontró el archivo GeoJSON. Verifica que exista en outputs/")
+    print("⚠️ No se encontró el archivo GeoJSON. Verifica que exista en data/")
     raise e
 
 # Asegurar sistema de coordenadas (para visualización web)
