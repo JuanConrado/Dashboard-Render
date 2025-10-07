@@ -10,6 +10,7 @@ csv_path = "data/tasas_hogares_departamento.csv"
 try:
     df = pd.read_csv(csv_path)
     df["COD_DPTO"] = df["COD_DPTO"].astype(str).str.zfill(2)
+    
 except Exception as e:
     df = pd.DataFrame()
 
@@ -43,7 +44,7 @@ server = app.server
 # ========================================
 app.layout = html.Div([
     html.H2("Dashboard Interactivo — Pobreza de Hogares (%) en Colombia"),
-    html.P(status),
+    
     html.P(msg),
 
     html.Div([
