@@ -66,7 +66,13 @@ app.layout = html.Div([
 
     html.Hr(),
 
+    html.Br(),
+
     html.Div([
+        dcc.Graph(id="grafico_top"),
+        dcc.Graph(id="grafico_hist"),
+
+        html.Div([
         html.Label("Seleccionar departamento:"),
         dcc.Dropdown(
             id="departamento",
@@ -74,13 +80,7 @@ app.layout = html.Div([
             value=df["NOMBRE"][0],
             style={'width': '50%'}
         )
-    ]),
-
-    html.Br(),
-
-    html.Div([
-        dcc.Graph(id="grafico_top"),
-        dcc.Graph(id="grafico_hist"),
+    ], style={'marginBottom': '20px'}),
         dcc.Graph(id="grafico_linea")
     ]),
 
