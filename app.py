@@ -1,155 +1,144 @@
+import dash
+from dash import dcc, html, Input, Output
 import pandas as pd
 import plotly.express as px
-from dash import Dash, html, dcc, dash_table, Input, Output
 
-# ========================================
-# 1️⃣ CARGA DE DATOS
-# ========================================
-csv_path = "data/tasas_hogares_departamento.csv"
+# ==========================
+# 1. CARGA DE DATOS
+# ==========================
+df = pd.read_csv("data/tasas_hogares_departamento.csv")
 
-try:
-    df = pd.read_csv(csv_path)
-    df["COD_DPTO"] = df["COD_DPTO"].astype(str).str.zfill(2)
-    
-except Exception as e:
-    df = pd.DataFrame()
+# Asegurar tipo numérico
+df["pobreza_hog_%"] = pd.to_numeric(df["pobreza_hog_%"], errors="coerce")
+df["COD_DPTO"] = df["COD_DPTO"].astype(str).str.zfill(2)
 
-# ========================================
-# 2️⃣ LIMPIEZA Y VALIDACIÓN
-# ========================================
-if not df.empty:
-    if "pobreza_hog_%" in df.columns:
-        df = df[["COD_DPTO", "pobreza_hog_%"]]
-        df["pobreza_hog_%"] = df["pobreza_hog_%"].astype(float)
-        df["NOMBRE"] = [
-            "ANTIOQUIA","ATLÁNTICO","BOGOTÁ D.C.","BOLÍVAR","BOYACÁ","CALDAS",
-            "CAQUETÁ","CAUCA","CÉSAR","CÓRDOBA","CUNDINAMARCA","CHOCÓ",
-            "HUILA","LA GUAJIRA","MAGDALENA","META","NARIÑO","NORTE DE SANTANDER",
-            "QUINDÍO","RISARALDA","SANTANDER","SUCRE","TOLIMA","VALLE DEL CAUCA"
-        ][:len(df)]
-        msg = f"✅ {len(df)} departamentos cargados."
-    else:
-        msg = "⚠️ No se encontró la columna 'pobreza_hog_%'."
-else:
-    msg = "⚠️ No se pudo cargar el CSV."
+# Diccionario de códigos a nombres oficiales del DANE
+nombres_dptos = {
+    "05": "Antioquia", "08": "Atlántico", "11": "Bogotá D.C.", "13": "Bolívar",
+    "15": "Boyacá", "17": "Caldas", "18": "Caquetá", "19": "Cauca",
+    "20": "Cesar", "23": "Córdoba", "25": "Cundinamarca", "27": "Chocó",
+    "41": "Huila", "44": "La Guajira", "47": "Magdalena", "50": "Meta",
+    "52": "Nariño", "54": "Norte de Santander", "63": "Quindío", "66": "Risaralda",
+    "68": "Santander", "70": "Sucre", "73": "Tolima", "76": "Valle del Cauca",
+    "81": "Arauca", "85": "Casanare", "86": "Putumayo", "88": "San Andrés",
+    "91": "Amazonas", "94": "Guainía", "95": "Guaviare", "97": "Vaupés", "99": "Vichada"
+}
 
-# ========================================
-# 3️⃣ CONFIGURACIÓN DASH
-# ========================================
-app = Dash(__name__)
+# Agregar columna de nombres
+df["DEPARTAMENTO"] = df["COD_DPTO"].map(nombres_dptos)
+
+# ==========================
+# 2. INICIALIZAR APP
+# ==========================
+app = dash.Dash(__name__)
 server = app.server
 
-# ========================================
-# 4️⃣ LAYOUT
-# ========================================
+# ==========================
+# 3. LAYOUT
+# ==========================
 app.layout = html.Div([
-    html.H2("Dashboard Interactivo — Pobreza de Hogares (%) en Colombia"),
-    
-    html.P(msg),
+    html.H1("📊 Dashboard: Pobreza de Hogares por Departamento — Colombia",
+            style={"textAlign": "center", "color": "#0a3d62"}),
 
     html.Div([
         html.Div([
-            html.H4("📊 Promedio:"),
-            html.H3(f"{df['pobreza_hog_%'].mean():.2f}%")
-        ], style={'display': 'inline-block', 'width': '30%', 'textAlign': 'center'}),
+            html.H3("Promedio Nacional", style={"color": "#3c6382"}),
+            html.H2(f"{df['pobreza_hog_%'].mean():.1f}%", style={"color": "#1e3799"})
+        ], className="card"),
 
         html.Div([
-            html.H4("📈 Mediana:"),
-            html.H3(f"{df['pobreza_hog_%'].median():.2f}%")
-        ], style={'display': 'inline-block', 'width': '30%', 'textAlign': 'center'}),
+            html.H3("Máximo", style={"color": "#3c6382"}),
+            html.H2(f"{df['pobreza_hog_%'].max():.1f}%", style={"color": "#e55039"})
+        ], className="card"),
 
         html.Div([
-            html.H4("🚨 Máximo:"),
-            html.H3(f"{df['pobreza_hog_%'].max():.2f}%")
-        ], style={'display': 'inline-block', 'width': '30%', 'textAlign': 'center'}),
-    ], style={'marginBottom': '30px'}),
+            html.H3("Mínimo", style={"color": "#3c6382"}),
+            html.H2(f"{df['pobreza_hog_%'].min():.1f}%", style={"color": "#38ada9"})
+        ], className="card"),
+    ], style={"display": "flex", "justifyContent": "space-around"}),
 
     html.Hr(),
 
-    html.Br(),
-
     html.Div([
-        dcc.Graph(id="grafico_top"),
-        dcc.Graph(id="grafico_hist"),
+        html.Div([
+            html.Label("Selecciona Departamento 1"),
+            dcc.Dropdown(
+                id="depto1",
+                options=[{"label": d, "value": d} for d in sorted(df["DEPARTAMENTO"].dropna().unique())],
+                value="Antioquia",
+                clearable=False
+            ),
+            html.Label("Selecciona Departamento 2"),
+            dcc.Dropdown(
+                id="depto2",
+                options=[{"label": d, "value": d} for d in sorted(df["DEPARTAMENTO"].dropna().unique())],
+                value="Chocó",
+                clearable=False
+            ),
+        ], style={"width": "25%", "display": "inline-block", "verticalAlign": "top"}),
 
         html.Div([
-        html.Label("Seleccionar departamento:"),
-        dcc.Dropdown(
-            id="departamento",
-            options=[{"label": i, "value": i} for i in df["NOMBRE"]],
-            value=df["NOMBRE"][0],
-            style={'width': '50%'}
-        )
-    ], style={'marginBottom': '20px'}),
-        dcc.Graph(id="grafico_linea")
+            dcc.Graph(id="bar_chart"),
+            dcc.Graph(id="hist_chart"),
+        ], style={"width": "70%", "display": "inline-block", "padding": "0 2%"})
     ]),
 
-    html.Hr(),
-    html.H4("Tabla completa de datos:"),
-    dash_table.DataTable(
-        data=df.to_dict("records"),
-        columns=[{"name": c, "id": c} for c in df.columns],
-        style_table={"overflowX": "auto"},
-        style_cell={"textAlign": "left", "padding": "5px"},
-        page_size=10
-    )
+    html.Div(id="comentario", style={
+        "padding": "20px", "fontSize": "16px", "backgroundColor": "#f8f9fa", "borderRadius": "10px"
+    })
 ])
 
-# ========================================
-# 5️⃣ CALLBACKS
-# ========================================
+# ==========================
+# 4. CALLBACKS
+# ==========================
 
 @app.callback(
-    Output("grafico_top", "figure"),
-    Output("grafico_hist", "figure"),
-    Output("grafico_linea", "figure"),
-    Input("departamento", "value")
+    [Output("bar_chart", "figure"),
+     Output("hist_chart", "figure"),
+     Output("comentario", "children")],
+    [Input("depto1", "value"), Input("depto2", "value")]
 )
-def actualizar_graficos(depto_sel):
-    # TOP 10
-    df_sorted = df.sort_values("pobreza_hog_%", ascending=False).head(10)
-    fig_top = px.bar(
-        df_sorted,
-        x="NOMBRE",
-        y="pobreza_hog_%",
-        text="pobreza_hog_%",
-        color="pobreza_hog_%",
-        color_continuous_scale="YlOrRd",
-        title="Top 10 Departamentos con mayor pobreza (%)"
-    )
-    fig_top.update_traces(texttemplate='%{text:.2f}%', textposition='outside')
+def actualizar_dashboard(d1, d2):
+    # --- Gráfico de barras ---
+    fig_bar = px.bar(df.sort_values("pobreza_hog_%", ascending=False),
+                     x="DEPARTAMENTO", y="pobreza_hog_%",
+                     color="pobreza_hog_%",
+                     color_continuous_scale="YlOrRd",
+                     title="Pobreza por Departamento (%)")
+    fig_bar.update_layout(xaxis_title=None, yaxis_title="Porcentaje", template="plotly_white")
 
-    # HISTOGRAMA
-    fig_hist = px.histogram(
-        df,
-        x="pobreza_hog_%",
-        nbins=10,
-        color_discrete_sequence=["#3182bd"],
-        title="Distribución general de pobreza (%)"
-    )
+    # --- Histograma ---
+    fig_hist = px.histogram(df, x="pobreza_hog_%", nbins=10,
+                            title="Distribución del índice de pobreza (%)",
+                            color_discrete_sequence=["#74b9ff"])
+    fig_hist.update_layout(xaxis_title="Pobreza (%)", yaxis_title="Frecuencia", template="plotly_white")
 
-    # LÍNEA ordenada
-    fig_line = px.line(
-        df.sort_values("pobreza_hog_%"),
-        x="NOMBRE",
-        y="pobreza_hog_%",
-        title=f"Tendencia de pobreza por departamento (seleccionado: {depto_sel})",
-        markers=True
-    )
+    # --- Comentario automático ---
+    top = df.nlargest(2, "pobreza_hog_%")
+    low = df.nsmallest(2, "pobreza_hog_%")
+    prom = df["pobreza_hog_%"].mean()
 
-    # Resalta el departamento seleccionado
-    sel = df[df["NOMBRE"] == depto_sel]
-    if not sel.empty:
-        fig_line.add_scatter(
-            x=sel["NOMBRE"], y=sel["pobreza_hog_%"],
-            mode="markers+text", marker=dict(color="red", size=12),
-            text=[f"{sel['pobreza_hog_%'].values[0]:.1f}%"], name="Seleccionado"
-        )
+    texto = f"""
+    🔹 **{top.iloc[0]['DEPARTAMENTO']}** presenta el mayor nivel de pobreza (**{top.iloc[0]['pobreza_hog_%']:.1f}%**),
+    seguida de **{top.iloc[1]['DEPARTAMENTO']} ({top.iloc[1]['pobreza_hog_%']:.1f}%)**.
 
-    return fig_top, fig_hist, fig_line
+    🔹 En contraste, los niveles más bajos se observan en **{low.iloc[0]['DEPARTAMENTO']} ({low.iloc[0]['pobreza_hog_%']:.1f}%)**
+    y **{low.iloc[1]['DEPARTAMENTO']} ({low.iloc[1]['pobreza_hog_%']:.1f}%)**.
 
-# ========================================
-# 6️⃣ MAIN
-# ========================================
+    🔹 El promedio nacional de pobreza es **{prom:.1f}%**.
+    """
+
+    if d1 and d2:
+        v1 = df.loc[df["DEPARTAMENTO"] == d1, "pobreza_hog_%"].values[0]
+        v2 = df.loc[df["DEPARTAMENTO"] == d2, "pobreza_hog_%"].values[0]
+        diff = abs(v1 - v2)
+        texto += f"\n\nComparando **{d1} ({v1:.1f}%)** con **{d2} ({v2:.1f}%)**, \
+la diferencia es de **{diff:.1f} puntos porcentuales**."
+
+    return fig_bar, fig_hist, dcc.Markdown(texto)
+
+# ==========================
+# 5. SERVIDOR
+# ==========================
 if __name__ == "__main__":
-    app.run_server(debug=True)
+    app.run_server(host="0.0.0.0", port=8050)
