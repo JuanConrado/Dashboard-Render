@@ -7,6 +7,12 @@ from dash import Dash, html, dcc, dash_table, Input, Output
 # ========================================
 csv_path = "data/tasas_hogares_departamento.csv"
 
+try:
+    df = pd.read_csv(csv_path)
+    df["COD_DPTO"] = df["COD_DPTO"].astype(str).str.zfill(2)
+except Exception as e:
+    df = pd.DataFrame()
+
 # ========================================
 # 2️⃣ LIMPIEZA Y VALIDACIÓN
 # ========================================
