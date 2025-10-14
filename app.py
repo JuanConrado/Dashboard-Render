@@ -27,6 +27,75 @@ nombres_dptos = {
 # Agregar columna de nombres
 df["DEPARTAMENTO"] = df["COD_DPTO"].map(nombres_dptos)
 
+# -------------------------------------------------------
+# Nuevo: Diccionario de coordenadas (latitud y longitud)
+# de las capitales de cada departamento (valores aproximados).
+# Si tienes coordenadas más precisas, reemplázalas aquí.
+coords = {
+    "Antioquia": (6.2518, -75.5636),
+    "Atlántico": (10.9804, -74.8039),
+    "Bogotá D.C.": (4.7110, -74.0721),
+    "Bolívar": (10.4000, -75.5000),
+    "Boyacá": (5.5353, -73.3678),
+    "Caldas": (5.0703, -75.5138),
+    "Caquetá": (1.6144, -75.6062),
+    "Cauca": (2.4448, -76.6147),
+    "Cesar": (10.4742, -73.2454),
+    "Córdoba": (8.7591, -75.8786),
+    "Cundinamarca": (4.7110, -74.0721),  # comparte capital con Bogotá
+    "Chocó": (5.6944, -76.6611),
+    "Huila": (2.9304, -75.2809),
+    "La Guajira": (11.5444, -72.9072),
+    "Magdalena": (11.2408, -74.1990),
+    "Meta": (4.1420, -73.6266),
+    "Nariño": (1.2136, -77.2811),
+    "Norte de Santander": (7.8941, -72.5039),
+    "Quindío": (4.5325, -75.6811),
+    "Risaralda": (4.8143, -75.6946),
+    "Santander": (7.1193, -73.1227),
+    "Sucre": (9.3040, -75.3978),
+    "Tolima": (4.4389, -75.2322),
+    "Valle del Cauca": (3.4516, -76.5320),
+    "Arauca": (7.0833, -70.7500),
+    "Casanare": (5.3378, -72.3959),
+    "Putumayo": (1.1470, -76.6472),
+    "San Andrés": (12.5833, -81.7000),
+    "Amazonas": (-4.2050, -69.9406),
+    "Guainía": (3.8667, -67.9167),
+    "Guaviare": (2.5667, -72.6460),
+    "Vaupés": (1.2561, -70.2346),
+    "Vichada": (6.1857, -67.4858),
+}
+
+# Crear DataFrame de coordenadas
+df_coords = pd.DataFrame(
+    [{"DEPARTAMENTO": dpto, "lat": lat, "lon": lon} for dpto, (lat, lon) in coords.items()]
+)
+
+# Unir con el DataFrame principal para incluir lat/lon
+df = df.merge(df_coords, on="DEPARTAMENTO", how="left")
+
+# Crear la figura del mapa (Scatter Mapbox) una sola vez.
+# Representa cada departamento con un marcador cuyo tamaño y color
+# dependen del porcentaje de pobreza.
+fig_map = px.scatter_mapbox(
+    df,
+    lat="lat",
+    lon="lon",
+    size="pobreza_hog_%",  # tamaño proporcional
+    color="pobreza_hog_%",  # color proporcional
+    color_continuous_scale="YlOrRd",
+    hover_name="DEPARTAMENTO",
+    size_max=30,
+    zoom=4.5,
+    center={"lat": 4.570868, "lon": -74.297333},
+)
+fig_map.update_layout(
+    mapbox_style="carto-positron",
+    margin={"l": 0, "r": 0, "t": 0, "b": 0},
+    height=600
+)
+
 # ==========================
 # 2. INICIALIZAR APP
 # ==========================
@@ -83,6 +152,15 @@ app.layout = html.Div([
         ], style={"width": "70%", "display": "inline-block", "padding": "0 2%"})
     ]),
 
+    # Añadir la gráfica de mapa
+    html.Div([
+        html.H3("Mapa de pobreza por departamento", style={"textAlign": "center", "color": "#0a3d62"}),
+        dcc.Graph(
+            id="map_chart",
+            figure=fig_map  # se utiliza la figura creada arriba
+        )
+    ], style={"padding": "20px"}),
+
     html.Div(id="comentario", style={
         "padding": "20px", "fontSize": "16px", "backgroundColor": "#f8f9fa", "borderRadius": "10px"
     })
@@ -91,7 +169,6 @@ app.layout = html.Div([
 # ==========================
 # 4. CALLBACKS
 # ==========================
-
 @app.callback(
     [Output("bar_chart", "figure"),
      Output("hist_chart", "figure"),
@@ -142,3 +219,4 @@ la diferencia es de **{diff:.1f} puntos porcentuales**."
 # ==========================
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8050)
+
